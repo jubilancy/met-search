@@ -1,0 +1,53 @@
+name: Rebuild artwork index
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # every Sunday at 3am UTC
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache MetObjects.csv
+        uses: actions/cache@v4
+        with:
+          path: /tmp/MetObjects.csv
+          key: metobjects-csv-${{ steps.date.outputs.week }}
+          restore-keys: metobjects-csv-
+
+      - name: Get week number (for cache key)
+        id: date
+        run: echo "week=$(date +%Y-%W)" >> $GITHUB_OUTPUT
+
+      - name: Build artwork index
+        run: python scripts/build.py
+
+      - name: Commit updated index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/artworks.json
+          git diff --staged --quiet || git commit -m "chore: rebuild artwork index $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Summary
+        if: always()
+        run: |
+          SIZE=$(du -sh data/artworks.json 2>/dev/null | cut -f1 || echo "N/A")
+          COUNT=$(python3 -c "import json; print(len(json.load(open('data/artworks.json'))))" 2>/dev/null || echo "N/A")
+          echo "## Index rebuilt" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artworks:** $COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **File size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date:** $(date -u)" >> $GITHUB_STEP_SUMMARY

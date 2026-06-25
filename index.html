@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MET OPEN ACCESS — Collection Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Playfair+Display:ital,wght@0,700;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lunr/lunr.js"></script>
+<style>
+  /* ── TOKENS ─────────────────────────────────────────────────────────── */
+  :root {
+    --ink:        #0d0d0d;
+    --paper:      #f7f4ee;
+    --rule:       #0d0d0d;
+    --accent:     #c41e3a;   /* museum red */
+    --accent2:    #1a3a5c;   /* deep gallery blue */
+    --muted:      #888070;
+    --card-bg:    #ffffff;
+    --border:     1px solid var(--ink);
+    --mono:       'DM Mono', monospace;
+    --serif:      'Playfair Display', Georgia, serif;
+    --sans:       'Inter', system-ui, sans-serif;
+  }
+
+  /* ── RESET ──────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  /* ── MASTHEAD ────────────────────────────────────────────────────────── */
+  .masthead {
+    border-bottom: 3px solid var(--ink);
+    padding: 0 2rem;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 56px;
+  }
+  .masthead-left {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .masthead-title {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .masthead-right {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    text-align: right;
+  }
+  .masthead-right span {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* ── HERO ────────────────────────────────────────────────────────────── */
+  .hero {
+    border-bottom: 1px solid var(--ink);
+    padding: 3.5rem 2rem 2.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: end;
+  }
+  .hero-left h1 {
+    font-family: var(--serif);
+    font-size: clamp(2.8rem, 6vw, 5.5rem);
+    line-height: 0.92;
+    letter-spacing: -0.02em;
+    font-style: italic;
+  }
+  .hero-left h1 em {
+    font-style: normal;
+    color: var(--accent);
+  }
+  .hero-right {
+    padding-bottom: 0.25rem;
+  }
+  .hero-right p {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--muted);
+    max-width: 340px;
+    margin-left: auto;
+  }
+  .hero-right p strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* ── CONTROLS ────────────────────────────────────────────────────────── */
+  .controls {
+    border-bottom: 1px solid var(--ink);
+    padding: 1.25rem 2rem;
+    display: flex;
+    gap: 1rem;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .search-wrap {
+    flex: 1;
+    min-width: 280px;
+    position: relative;
+  }
+  .search-wrap label {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    pointer-events: none;
+    transition: all 0.15s;
+    z-index: 1;
+  }
+  .search-wrap input:not(:placeholder-shown) + label,
+  .search-wrap input:focus + label {
+    display: none;
+  }
+  #search-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 1rem;
+    border: 1px solid var(--ink);
+    background: var(--card-bg);
+    font-family: var(--sans);
+    font-size: 0.95rem;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #search-input::placeholder { color: transparent; }
+  #search-input:focus {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-select {
+    height: 48px;
+    padding: 0 2rem 0 0.875rem;
+    border: 1px solid var(--ink);
+    background: var(--card-bg);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%230d0d0d'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    transition: border-color 0.15s;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+
+  .date-range {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 48px;
+  }
+  .date-range input {
+    width: 80px;
+    height: 48px;
+    padding: 0 0.5rem;
+    border: 1px solid var(--ink);
+    background: var(--card-bg);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--ink);
+    outline: none;
+    text-align: center;
+  }
+  .date-range input:focus { border-color: var(--accent); }
+  .date-range span {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .btn-reset {
+    height: 48px;
+    padding: 0 1.25rem;
+    border: 1px solid var(--ink);
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-reset:hover { background: var(--ink); color: var(--paper); }
+
+  /* ── STATUS BAR ──────────────────────────────────────────────────────── */
+  .status-bar {
+    border-bottom: 1px solid var(--ink);
+    padding: 0.6rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .status-count {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .status-count strong { color: var(--ink); }
+  .status-msg {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+  .loading-bar {
+    height: 2px;
+    background: var(--accent);
+    position: fixed;
+    top: 0; left: 0;
+    width: 0;
+    transition: width 0.3s;
+    z-index: 999;
+  }
+
+  /* ── GRID ────────────────────────────────────────────────────────────── */
+  .grid-wrap {
+    padding: 1.5rem 2rem 4rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--ink);
+    border-left: 1px solid var(--ink);
+  }
+
+  /* ── ARTWORK CARD ────────────────────────────────────────────────────── */
+  .card {
+    border-right: 1px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+    cursor: pointer;
+    background: var(--card-bg);
+    transition: background 0.1s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card:hover { background: #faf7f1; }
+  .card.expanded { background: var(--paper); }
+
+  .card-thumb {
+    aspect-ratio: 1;
+    overflow: hidden;
+    background: #e8e4da;
+    border-bottom: 1px solid var(--ink);
+    position: relative;
+  }
+  .card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: opacity 0.3s;
+  }
+  .card-thumb img.loading { opacity: 0; }
+  .card-thumb img.loaded { opacity: 1; }
+
+  .card-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Department color tag */
+  .dept-tag {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.4rem;
+    background: var(--ink);
+    color: var(--paper);
+    line-height: 1;
+  }
+  .highlight-dot {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .card-body {
+    padding: 0.875rem;
+  }
+  .card-title {
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    line-height: 1.3;
+    font-style: italic;
+    margin-bottom: 0.3rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-artist {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-date {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 0.2rem;
+  }
+
+  /* ── EXPANDED PANEL ──────────────────────────────────────────────────── */
+  .expand-panel {
+    grid-column: 1 / -1;
+    border-right: 1px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+    background: var(--paper);
+    padding: 2.5rem;
+    display: none;
+    animation: slideDown 0.2s ease-out;
+  }
+  .expand-panel.active { display: grid; }
+
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .expand-inner {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3rem;
+    max-width: 1000px;
+  }
+
+  .expand-image-wrap {
+    width: 320px;
+    flex-shrink: 0;
+  }
+  .expand-image-wrap img {
+    width: 100%;
+    display: block;
+    border: 1px solid var(--ink);
+  }
+  .expand-image-wrap .no-image {
+    width: 100%;
+    aspect-ratio: 3/4;
+    background: #e8e4da;
+    border: 1px solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .expand-meta {
+    min-width: 0;
+  }
+  .expand-title {
+    font-family: var(--serif);
+    font-size: 2rem;
+    line-height: 1.15;
+    font-style: italic;
+    margin-bottom: 0.5rem;
+  }
+  .expand-artist {
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .expand-artist-bio {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+  }
+
+  .meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+  }
+  .meta-table tr { border-bottom: 1px solid #d8d3c8; }
+  .meta-table tr:last-child { border-bottom: none; }
+  .meta-table td {
+    padding: 0.5rem 0;
+    vertical-align: top;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+  .meta-table td:first-child {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding-right: 1.5rem;
+    white-space: nowrap;
+    width: 1%;
+  }
+
+  .expand-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .btn-met {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1.25rem;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-met:hover { background: var(--accent); border-color: var(--accent); }
+  .btn-close {
+    padding: 0.6rem 1.25rem;
+    border: 1px solid var(--ink);
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-close:hover { background: var(--ink); color: var(--paper); }
+
+  /* ── EMPTY / LOADING STATES ──────────────────────────────────────────── */
+  .state-msg {
+    grid-column: 1 / -1;
+    padding: 5rem 2rem;
+    text-align: center;
+  }
+  .state-msg p {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .state-msg p strong { color: var(--ink); font-size: 1.4rem; font-family: var(--serif); font-style: italic; display: block; margin-bottom: 0.5rem; }
+
+  /* ── LOAD MORE ───────────────────────────────────────────────────────── */
+  .load-more-wrap {
+    padding: 2rem 0 0;
+    text-align: center;
+  }
+  .btn-load-more {
+    padding: 0.75rem 2rem;
+    border: 1px solid var(--ink);
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-load-more:hover { background: var(--ink); color: var(--paper); }
+
+  /* ── RESPONSIVE ──────────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .masthead { grid-template-columns: 1fr 1fr; height: auto; padding: 0.75rem 1rem; }
+    .masthead-title { display: none; }
+    .hero { grid-template-columns: 1fr; padding: 2rem 1rem 1.5rem; gap: 1rem; }
+    .hero-right p { margin-left: 0; max-width: none; }
+    .controls { padding: 1rem; gap: 0.75rem; }
+    .grid-wrap { padding: 1rem 1rem 3rem; }
+    .expand-inner { grid-template-columns: 1fr; }
+    .expand-image-wrap { width: 100%; max-width: 320px; }
+    .expand-panel { padding: 1.5rem 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-bar" id="loading-bar"></div>
+
+<!-- MASTHEAD -->
+<header class="masthead">
+  <div class="masthead-left">CC0 · Open Access</div>
+  <div class="masthead-title">The Metropolitan Museum of Art</div>
+  <div class="masthead-right" id="masthead-count">Loading…</div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-left">
+    <h1>The <em>Open</em><br>Collection</h1>
+  </div>
+  <div class="hero-right">
+    <p>
+      <strong>~180,000 public domain artworks</strong> from the Met's open access initiative —
+      paintings, sculptures, textiles, photographs, and more, spanning 5,000 years.
+      All images free to use under CC0.
+    </p>
+  </div>
+</section>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <div class="search-wrap">
+    <input type="text" id="search-input" placeholder=" " autocomplete="off" spellcheck="false">
+    <label for="search-input">Search title, artist, medium, culture…</label>
+  </div>
+  <div class="filter-group">
+    <select class="filter-select" id="filter-dept">
+      <option value="">All departments</option>
+    </select>
+    <select class="filter-select" id="filter-culture">
+      <option value="">All cultures</option>
+    </select>
+    <select class="filter-select" id="filter-medium">
+      <option value="">All media</option>
+    </select>
+  </div>
+  <div class="date-range">
+    <span>Date</span>
+    <input type="number" id="filter-year-from" placeholder="−3000" min="-3000" max="2024">
+    <span>—</span>
+    <input type="number" id="filter-year-to" placeholder="2024" min="-3000" max="2024">
+  </div>
+  <button class="btn-reset" id="btn-reset">Clear filters</button>
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-count" id="status-count">—</div>
+  <div class="status-msg" id="status-msg"></div>
+</div>
+
+<!-- GRID -->
+<div class="grid-wrap">
+  <div class="grid" id="grid">
+    <div class="state-msg">
+      <p><strong>Loading collection…</strong>Fetching artwork index</p>
+    </div>
+  </div>
+  <div class="load-more-wrap" id="load-more-wrap" style="display:none">
+    <button class="btn-load-more" id="btn-load-more">Load more</button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const DATA_URL   = './data/artworks.json';
+const PAGE_SIZE  = 60;
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+let allArtworks   = [];
+let filteredIds   = [];   // indices into allArtworks after filter+search
+let displayedCount = 0;
+let lunrIndex     = null;
+let expandedCard  = null;
+let expandedPanel = null;
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function setLoadingBar(pct) {
+  $('loading-bar').style.width = pct + '%';
+  if (pct >= 100) setTimeout(() => { $('loading-bar').style.width = '0'; }, 400);
+}
+
+function fmtNum(n) {
+  return n.toLocaleString('en-US');
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────
+async function init() {
+  setLoadingBar(10);
+  $('status-msg').textContent = 'Fetching artwork index…';
+
+  try {
+    const resp = await fetch(DATA_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    setLoadingBar(40);
+    $('status-msg').textContent = 'Parsing data…';
+    allArtworks = await resp.json();
+    setLoadingBar(60);
+    $('status-msg').textContent = 'Building search index…';
+    await buildIndex();
+    setLoadingBar(80);
+    populateFilters();
+    setLoadingBar(100);
+    $('masthead-count').innerHTML = `<span>${fmtNum(allArtworks.length)}</span> artworks`;
+    applyFilters();
+    $('status-msg').textContent = '';
+    attachEvents();
+  } catch (e) {
+    $('grid').innerHTML = `<div class="state-msg"><p><strong>Could not load collection.</strong>${e.message}<br><br>Run <code>python scripts/build.py</code> to generate data/artworks.json</p></div>`;
+    $('status-msg').textContent = 'Error loading data';
+    setLoadingBar(100);
+  }
+}
+
+// ── LUNR INDEX ────────────────────────────────────────────────────────────
+function buildIndex() {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      lunrIndex = lunr(function () {
+        this.ref('_idx');
+        this.field('title',      { boost: 10 });
+        this.field('artist',     { boost: 6  });
+        this.field('culture',    { boost: 4  });
+        this.field('medium',     { boost: 3  });
+        this.field('department', { boost: 2  });
+        this.field('tags',       { boost: 2  });
+        this.field('period');
+        this.field('classification');
+        this.field('country');
+
+        this.pipeline.remove(lunr.stemmer);
+        this.searchPipeline.remove(lunr.stemmer);
+
+        allArtworks.forEach((a, i) => {
+          this.add({
+            _idx:           i,
+            title:          a.title || '',
+            artist:         a.artist || '',
+            culture:        a.culture || '',
+            medium:         a.medium || '',
+            department:     a.department || '',
+            tags:           a.tags || '',
+            period:         a.period || '',
+            classification: a.classification || '',
+            country:        a.country || '',
+          });
+        });
+      });
+      resolve();
+    }, 0);
+  });
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────
+function populateFilters() {
+  const depts   = new Set();
+  const cultures = new Set();
+  const mediums  = new Set();
+
+  allArtworks.forEach(a => {
+    if (a.department) depts.add(a.department);
+    if (a.culture)    cultures.add(a.culture.split(';')[0].trim());
+    if (a.medium) {
+      // Use broad medium category (first material mentioned)
+      const broad = a.medium.split(/[,;]/)[0].trim().split(' ').slice(0, 3).join(' ');
+      if (broad.length < 40) mediums.add(broad);
+    }
+  });
+
+  const fill = (selectId, values, limit = 200) => {
+    const sel = $(selectId);
+    [...values].sort().slice(0, limit).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      sel.appendChild(opt);
+    });
+  };
+
+  fill('filter-dept',    depts);
+  fill('filter-culture', cultures);
+  fill('filter-medium',  mediums, 150);
+}
+
+function applyFilters() {
+  const query   = $('search-input').value.trim();
+  const dept    = $('filter-dept').value;
+  const culture = $('filter-culture').value;
+  const medium  = $('filter-medium').value;
+  const yearFrom = parseInt($('filter-year-from').value);
+  const yearTo   = parseInt($('filter-year-to').value);
+
+  let candidates;
+
+  if (query.length >= 2) {
+    try {
+      const results = lunrIndex.search(query + '*');
+      candidates = results.map(r => parseInt(r.ref));
+    } catch {
+      try {
+        const results = lunrIndex.search(query);
+        candidates = results.map(r => parseInt(r.ref));
+      } catch {
+        candidates = allArtworks.map((_, i) => i);
+      }
+    }
+  } else {
+    candidates = allArtworks.map((_, i) => i);
+  }
+
+  filteredIds = candidates.filter(i => {
+    const a = allArtworks[i];
+    if (dept    && a.department !== dept) return false;
+    if (culture && !a.culture?.startsWith(culture)) return false;
+    if (medium  && !a.medium?.toLowerCase().includes(medium.toLowerCase())) return false;
+    if (!isNaN(yearFrom) && a.dateEnd !== null && a.dateEnd < yearFrom) return false;
+    if (!isNaN(yearTo)   && a.dateBegin !== null && a.dateBegin > yearTo) return false;
+    return true;
+  });
+
+  displayedCount = 0;
+  closeExpanded();
+  renderGrid();
+  updateStatus(query);
+}
+
+function updateStatus(query) {
+  const total = filteredIds.length;
+  const showing = Math.min(displayedCount, total);
+
+  if (query || $('filter-dept').value || $('filter-culture').value || $('filter-medium').value ||
+      $('filter-year-from').value || $('filter-year-to').value) {
+    $('status-count').innerHTML = `<strong>${fmtNum(total)}</strong> results`;
+  } else {
+    $('status-count').innerHTML = `<strong>${fmtNum(total)}</strong> artworks`;
+  }
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────
+// Dept → short abbrev for tag
+const DEPT_ABBREVS = {
+  'Egyptian Art': 'Egypt',
+  'Greek and Roman Art': 'G&R',
+  'Asian Art': 'Asia',
+  'European Paintings': 'Paintings',
+  'European Sculpture and Decorative Arts': 'Sculpture',
+  'The American Wing': 'American',
+  'Medieval Art': 'Medieval',
+  'Islamic Art': 'Islamic',
+  'Drawings and Prints': 'Prints',
+  'Photographs': 'Photo',
+  'Musical Instruments': 'Music',
+  'Arms and Armor': 'Arms',
+  'Costume Institute': 'Costume',
+  'African Art': 'Africa',
+  'Oceanic Art': 'Oceania',
+};
+
+function deptAbbrev(dept) {
+  return DEPT_ABBREVS[dept] || (dept ? dept.split(' ')[0] : '');
+}
+
+function renderGrid() {
+  const grid = $('grid');
+  const slice = filteredIds.slice(displayedCount, displayedCount + PAGE_SIZE);
+
+  if (displayedCount === 0) {
+    if (filteredIds.length === 0) {
+      grid.innerHTML = `<div class="state-msg"><p><strong>Nothing found.</strong>Try different search terms or clear the filters.</p></div>`;
+      $('load-more-wrap').style.display = 'none';
+      return;
+    }
+    grid.innerHTML = '';
+  }
+
+  slice.forEach(i => {
+    const a = allArtworks[i];
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.idx = i;
+
+    const abbrev = deptAbbrev(a.department);
+    const highlightDot = a.isHighlight ? `<div class="highlight-dot" title="Met Highlight"></div>` : '';
+
+    card.innerHTML = `
+      <div class="card-thumb">
+        ${abbrev ? `<div class="dept-tag">${abbrev}</div>` : ''}
+        ${highlightDot}
+        ${a.image
+          ? `<img src="${a.image}" alt="${escHtml(a.title)}" loading="lazy" class="loading" onload="this.classList.replace('loading','loaded')" onerror="this.parentNode.innerHTML='<div class=\\"card-thumb-placeholder\\">No image</div>'">`
+          : `<div class="card-thumb-placeholder">No image</div>`
+        }
+      </div>
+      <div class="card-body">
+        <div class="card-title">${escHtml(a.title)}</div>
+        <div class="card-artist">${escHtml(a.artist || 'Unknown')}</div>
+        ${a.date ? `<div class="card-date">${escHtml(a.date)}</div>` : ''}
+      </div>`;
+
+    card.addEventListener('click', () => toggleExpand(card, i));
+    grid.appendChild(card);
+  });
+
+  displayedCount += slice.length;
+  const remaining = filteredIds.length - displayedCount;
+  const lmw = $('load-more-wrap');
+
+  if (remaining > 0) {
+    lmw.style.display = 'block';
+    $('btn-load-more').textContent = `Load ${Math.min(PAGE_SIZE, remaining)} more  (${fmtNum(remaining)} remaining)`;
+  } else {
+    lmw.style.display = 'none';
+  }
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── EXPAND ────────────────────────────────────────────────────────────────
+function toggleExpand(card, idx) {
+  if (expandedCard === card) {
+    closeExpanded();
+    return;
+  }
+  closeExpanded();
+  openExpanded(card, idx);
+}
+
+function openExpanded(card, idx) {
+  const a = allArtworks[idx];
+  card.classList.add('expanded');
+  expandedCard = card;
+
+  const panel = document.createElement('div');
+  panel.className = 'expand-panel active';
+
+  const metaRows = [
+    ['Medium',        a.medium],
+    ['Dimensions',    a.dimensions],
+    ['Culture',       a.culture],
+    ['Period',        a.period],
+    ['Dynasty',       a.dynasty],
+    ['Department',    a.department],
+    ['Classification',a.classification],
+    ['Country',       a.country],
+    ['Credit',        a.creditLine],
+  ].filter(([, v]) => v).map(([k, v]) =>
+    `<tr><td>${k}</td><td>${escHtml(v)}</td></tr>`
+  ).join('');
+
+  panel.innerHTML = `
+    <div class="expand-inner">
+      <div class="expand-image-wrap">
+        ${a.image
+          ? `<img src="${a.image}" alt="${escHtml(a.title)}">`
+          : `<div class="no-image">No image available</div>`
+        }
+      </div>
+      <div class="expand-meta">
+        <div class="expand-title">${escHtml(a.title)}</div>
+        ${a.artist ? `<div class="expand-artist">${escHtml(a.artist)}</div>` : ''}
+        ${a.artistBio ? `<div class="expand-artist-bio">${escHtml(a.artistBio)}</div>` : ''}
+        ${a.date ? `<div class="expand-artist-bio" style="margin-bottom:1.25rem">${escHtml(a.date)}</div>` : ''}
+        <table class="meta-table"><tbody>${metaRows}</tbody></table>
+        <div class="expand-actions">
+          <a class="btn-met" href="${a.url}" target="_blank" rel="noopener">
+            View on Met ↗
+          </a>
+          <button class="btn-close" onclick="closeExpanded()">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Insert after card's row — find next card that starts a new row
+  card.after(panel);
+  expandedPanel = panel;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeExpanded() {
+  if (expandedCard) expandedCard.classList.remove('expanded');
+  if (expandedPanel) expandedPanel.remove();
+  expandedCard = null;
+  expandedPanel = null;
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────────
+function attachEvents() {
+  let searchTimer;
+  $('search-input').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 220);
+  });
+
+  ['filter-dept','filter-culture','filter-medium'].forEach(id => {
+    $(id).addEventListener('change', applyFilters);
+  });
+
+  let dateTimer;
+  ['filter-year-from','filter-year-to'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      clearTimeout(dateTimer);
+      dateTimer = setTimeout(applyFilters, 400);
+    });
+  });
+
+  $('btn-reset').addEventListener('click', () => {
+    $('search-input').value = '';
+    $('filter-dept').value  = '';
+    $('filter-culture').value = '';
+    $('filter-medium').value = '';
+    $('filter-year-from').value = '';
+    $('filter-year-to').value = '';
+    applyFilters();
+  });
+
+  $('btn-load-more').addEventListener('click', renderGrid);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeExpanded();
+    if (e.key === '/' && document.activeElement !== $('search-input')) {
+      e.preventDefault();
+      $('search-input').focus();
+    }
+  });
+}
+
+// ── GO ────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
